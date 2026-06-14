@@ -1,6 +1,6 @@
-# Wispr Flow Clone
+# Spill
 
-A macOS voice dictation app inspired by Wispr Flow. Hold or double-tap **Fn** to record your voice, release (or tap again) to transcribe and inject the text wherever your cursor is.
+A macOS voice dictation app. Hold or double-tap **Fn** to record your voice, release (or tap again) to transcribe and inject the text wherever your cursor is.
 
 Transcription is powered by [Mistral's Voxtral](https://mistral.ai/) model.
 
@@ -28,8 +28,8 @@ Transcription is powered by [Mistral's Voxtral](https://mistral.ai/) model.
 ## Installation
 
 ```bash
-git clone https://github.com/AZERDSQ131/wispr-flow-clone
-cd wispr-flow-clone
+git clone https://github.com/AZERDSQ131/spill
+cd spill
 
 # Create a virtual environment
 python3 -m venv .venv
