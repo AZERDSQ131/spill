@@ -1,0 +1,5 @@
+pynput>=1.7
+sounddevice>=0.5
+numpy>=2.0
+mistralai>=1.6
+pyperclip>=1.9
