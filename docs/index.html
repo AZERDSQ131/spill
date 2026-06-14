@@ -1,0 +1,469 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Wispr Flow Clone — Voice dictation for macOS</title>
+  <meta name="description" content="Hold or double-tap Fn to record. Transcribed by Mistral Voxtral. Injects text anywhere on macOS.">
+  <style>
+    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+    :root {
+      --bg:      #080809;
+      --bg-1:    #0f0f11;
+      --bg-2:    #161618;
+      --border:  rgba(255,255,255,0.06);
+      --text:    #f2f2f5;
+      --text-2:  #8e8e93;
+      --text-3:  #3a3a3c;
+      --red:     #ff3b30;
+      --red-dim: rgba(255,59,48,0.10);
+    }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif;
+      -webkit-font-smoothing: antialiased;
+      overflow-x: hidden;
+    }
+
+    /* Subtle grain */
+    body::after {
+      content: '';
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      z-index: 9999;
+      opacity: 0.03;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='300'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.75' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='300' height='300' filter='url(%23n)'/%3E%3C/svg%3E");
+      background-size: 300px;
+    }
+
+    /* ─── NAV ─── */
+    nav {
+      position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 0 48px; height: 58px;
+      background: rgba(8,8,9,0.75);
+      backdrop-filter: blur(24px) saturate(160%);
+      -webkit-backdrop-filter: blur(24px) saturate(160%);
+      border-bottom: 1px solid var(--border);
+    }
+
+    .nav-name {
+      font-size: 13px; font-weight: 600;
+      letter-spacing: 0.05em; text-transform: uppercase;
+      color: var(--text-2);
+    }
+
+    .nav-gh {
+      display: flex; align-items: center; gap: 7px;
+      font-size: 13px; font-weight: 500;
+      color: var(--text-2); text-decoration: none;
+      padding: 6px 14px;
+      border: 1px solid var(--border); border-radius: 7px;
+      transition: color .2s, border-color .2s;
+    }
+    .nav-gh:hover { color: var(--text); border-color: rgba(255,255,255,0.14); }
+    .nav-gh svg { width: 13px; height: 13px; fill: currentColor; flex-shrink: 0; }
+
+    /* ─── HERO ─── */
+    .hero {
+      min-height: 100vh;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      padding: 100px 40px 80px;
+      text-align: center;
+      position: relative;
+    }
+
+    .hero-glow {
+      position: absolute; top: 30%; left: 50%;
+      transform: translate(-50%, -50%);
+      width: 700px; height: 500px;
+      background: radial-gradient(ellipse at center, rgba(255,59,48,0.07) 0%, transparent 68%);
+      pointer-events: none;
+    }
+
+    .badge {
+      display: inline-flex; align-items: center; gap: 8px;
+      font-size: 11px; font-weight: 600;
+      letter-spacing: 0.1em; text-transform: uppercase;
+      color: var(--red);
+      padding: 5px 14px;
+      border: 1px solid rgba(255,59,48,0.22); border-radius: 100px;
+      margin-bottom: 44px;
+      opacity: 0; animation: up .7s .0s ease forwards;
+    }
+
+    .badge-dot {
+      width: 6px; height: 6px;
+      background: var(--red); border-radius: 50%;
+      animation: blink 2s ease-in-out infinite;
+    }
+    @keyframes blink {
+      0%,100% { opacity:1; transform:scale(1); }
+      50%      { opacity:.4; transform:scale(.65); }
+    }
+
+    h1 {
+      font-size: clamp(52px, 9vw, 104px);
+      font-weight: 700; letter-spacing: -0.045em; line-height: 1.0;
+      margin-bottom: 24px;
+      opacity: 0; animation: up .7s .08s ease forwards;
+    }
+
+    .hero-sub {
+      font-size: clamp(16px, 2vw, 19px);
+      color: var(--text-2); max-width: 420px;
+      line-height: 1.65; margin-bottom: 56px;
+      opacity: 0; animation: up .7s .16s ease forwards;
+    }
+
+    /* ─── WAVEFORM ─── */
+    .waveform-wrap {
+      position: relative;
+      margin-bottom: 52px;
+      opacity: 0; animation: up .7s .24s ease forwards;
+    }
+
+    .waveform {
+      display: flex; align-items: center; gap: 3.5px; height: 56px;
+    }
+
+    .bar {
+      width: 3px; border-radius: 3px;
+      background: var(--red);
+      transform-origin: center;
+      animation: wav var(--d) var(--dl) ease-in-out infinite;
+    }
+
+    @keyframes wav {
+      0%,100% { transform: scaleY(.15); opacity:.25; }
+      50%      { transform: scaleY(1);  opacity:.75; }
+    }
+
+    .cta {
+      display: inline-flex; align-items: center; gap: 9px;
+      font-size: 15px; font-weight: 600;
+      color: var(--bg); background: var(--text);
+      padding: 13px 26px; border-radius: 10px;
+      text-decoration: none;
+      transition: opacity .2s, transform .2s;
+      opacity: 0; animation: up .7s .32s ease forwards;
+    }
+    .cta:hover { opacity: .88; transform: translateY(-1px); }
+    .cta svg { width: 15px; height: 15px; fill: currentColor; }
+
+    @keyframes up {
+      from { opacity:0; transform:translateY(18px); }
+      to   { opacity:1; transform:translateY(0); }
+    }
+
+    /* ─── SECTIONS ─── */
+    .section {
+      max-width: 960px; margin: 0 auto;
+      padding: 88px 40px;
+      border-top: 1px solid var(--border);
+    }
+
+    .eyebrow {
+      font-size: 11px; font-weight: 600;
+      letter-spacing: .12em; text-transform: uppercase;
+      color: var(--text-3); margin-bottom: 14px;
+    }
+
+    h2 {
+      font-size: clamp(28px, 4vw, 42px);
+      font-weight: 700; letter-spacing: -0.035em;
+      line-height: 1.1; margin-bottom: 52px;
+    }
+
+    /* ─── GESTURE CARDS ─── */
+    .cards {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
+    }
+
+    .card {
+      background: var(--bg-2);
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      padding: 40px;
+      position: relative; overflow: hidden;
+    }
+
+    .card::before {
+      content: '';
+      position: absolute; top: 0; left: 0; right: 0; height: 1px;
+      background: linear-gradient(90deg, transparent, rgba(255,255,255,0.07), transparent);
+    }
+
+    .keys {
+      display: flex; align-items: center; gap: 10px;
+      margin-bottom: 32px;
+    }
+
+    .key {
+      display: inline-flex; align-items: center; justify-content: center;
+      min-width: 50px; height: 50px; padding: 0 14px;
+      background: linear-gradient(180deg, #2c2c2e 0%, #232325 100%);
+      border: 1px solid rgba(255,255,255,0.09);
+      border-bottom: 3px solid rgba(0,0,0,0.45);
+      border-radius: 9px;
+      font-size: 13px; font-weight: 600; letter-spacing: .02em;
+      color: var(--text);
+      box-shadow: 0 2px 10px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.05);
+    }
+
+    .key.lit {
+      background: linear-gradient(180deg, #2c2c2e 0%, #232325 100%);
+      border-color: rgba(255,59,48,.28);
+      box-shadow: 0 2px 10px rgba(0,0,0,.35), 0 0 0 1px rgba(255,59,48,.08), inset 0 1px 0 rgba(255,255,255,.05);
+    }
+
+    .key.down {
+      background: linear-gradient(180deg, #1e1e20 0%, #1a1a1c 100%);
+      border-bottom-width: 1px;
+      transform: translateY(2px);
+      box-shadow: 0 0 0 rgba(0,0,0,0), inset 0 1px 0 rgba(255,255,255,.02);
+    }
+
+    .div {
+      font-size: 12px; color: var(--text-3);
+      font-weight: 500; letter-spacing: .04em;
+    }
+
+    .card-title {
+      font-size: 17px; font-weight: 700;
+      letter-spacing: -.02em; margin-bottom: 8px;
+    }
+    .card-desc {
+      font-size: 14px; color: var(--text-2); line-height: 1.65;
+    }
+
+    /* ─── STEPS ─── */
+    .steps {
+      display: grid; grid-template-columns: repeat(3, 1fr);
+      gap: 14px;
+    }
+
+    .step {
+      padding: 32px;
+      background: var(--bg-1);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+    }
+
+    .step-n {
+      font-size: 11px; font-weight: 700;
+      letter-spacing: .08em; color: var(--red);
+      margin-bottom: 18px;
+    }
+
+    .step-title {
+      font-size: 15px; font-weight: 700;
+      letter-spacing: -.02em; margin-bottom: 8px;
+    }
+    .step-desc { font-size: 13px; color: var(--text-2); line-height: 1.65; }
+
+    /* ─── TERMINAL ─── */
+    .terminal {
+      background: var(--bg-1);
+      border: 1px solid var(--border);
+      border-radius: 13px; overflow: hidden;
+    }
+
+    .term-bar {
+      display: flex; align-items: center; gap: 7px;
+      padding: 13px 18px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .dot { width: 11px; height: 11px; border-radius: 50%; }
+    .dot-r { background: #ff5f57; }
+    .dot-y { background: #ffbd2e; }
+    .dot-g { background: #28c840; }
+
+    .term-body {
+      padding: 26px 28px;
+      font-family: 'SF Mono', Menlo, Monaco, Consolas, monospace;
+      font-size: 12.5px; line-height: 2.1;
+    }
+
+    .ln       { display: block; }
+    .ln.cmd   { color: var(--text-2); }
+    .ln.cmd::before { content: '$ '; color: var(--text-3); }
+    .ln.cmt   { color: var(--text-3); }
+    .ln.blank { display: block; height: 1em; }
+
+    /* ─── FOOTER ─── */
+    footer {
+      border-top: 1px solid var(--border);
+      padding: 36px 48px;
+      display: flex; align-items: center; justify-content: space-between;
+      max-width: 960px; margin: 0 auto;
+    }
+
+    .foot-copy { font-size: 12px; color: var(--text-3); }
+
+    .foot-link {
+      font-size: 12px; color: var(--text-3);
+      text-decoration: none; transition: color .2s;
+    }
+    .foot-link:hover { color: var(--text-2); }
+
+    /* ─── RESPONSIVE ─── */
+    @media (max-width: 680px) {
+      nav { padding: 0 20px; }
+      .section { padding: 64px 24px; }
+      .cards  { grid-template-columns: 1fr; }
+      .steps  { grid-template-columns: 1fr; }
+      footer  { flex-direction: column; gap: 12px; padding: 32px 24px; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- NAV -->
+<nav>
+  <span class="nav-name">Wispr Flow Clone</span>
+  <a class="nav-gh" href="https://github.com/AZERDSQ131/wispr-flow-clone" target="_blank" rel="noopener">
+    <svg viewBox="0 0 24 24"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.3 3.44 9.8 8.2 11.38.6.1.82-.26.82-.57v-2.2c-3.34.72-4.04-1.6-4.04-1.6-.54-1.38-1.33-1.75-1.33-1.75-1.08-.74.08-.72.08-.72 1.2.08 1.83 1.23 1.83 1.23 1.06 1.82 2.8 1.3 3.48.99.1-.77.42-1.3.76-1.6-2.66-.3-5.46-1.33-5.46-5.93 0-1.31.47-2.38 1.23-3.22-.12-.3-.53-1.52.12-3.18 0 0 1-.32 3.3 1.23a11.5 11.5 0 0 1 3-.4c1.02 0 2.04.13 3 .4 2.28-1.55 3.28-1.23 3.28-1.23.66 1.66.24 2.88.12 3.18.77.84 1.23 1.9 1.23 3.22 0 4.61-2.8 5.63-5.48 5.92.43.37.82 1.1.82 2.22v3.3c0 .32.22.68.82.56C20.56 21.8 24 17.3 24 12c0-6.63-5.37-12-12-12z"/></svg>
+    GitHub
+  </a>
+</nav>
+
+<!-- HERO -->
+<div class="hero">
+  <div class="hero-glow"></div>
+
+  <div class="badge">
+    <span class="badge-dot"></span>
+    macOS &nbsp;·&nbsp; Python &nbsp;·&nbsp; Mistral Voxtral
+  </div>
+
+  <h1>Voice dictation<br>for macOS.</h1>
+
+  <p class="hero-sub">
+    Hold or double-tap <strong>Fn</strong> to record.<br>
+    Release to transcribe and inject text anywhere.
+  </p>
+
+  <div class="waveform-wrap">
+    <div class="waveform" id="wf"></div>
+  </div>
+
+  <a class="cta" href="https://github.com/AZERDSQ131/wispr-flow-clone" target="_blank" rel="noopener">
+    <svg viewBox="0 0 24 24"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.3 3.44 9.8 8.2 11.38.6.1.82-.26.82-.57v-2.2c-3.34.72-4.04-1.6-4.04-1.6-.54-1.38-1.33-1.75-1.33-1.75-1.08-.74.08-.72.08-.72 1.2.08 1.83 1.23 1.83 1.23 1.06 1.82 2.8 1.3 3.48.99.1-.77.42-1.3.76-1.6-2.66-.3-5.46-1.33-5.46-5.93 0-1.31.47-2.38 1.23-3.22-.12-.3-.53-1.52.12-3.18 0 0 1-.32 3.3 1.23a11.5 11.5 0 0 1 3-.4c1.02 0 2.04.13 3 .4 2.28-1.55 3.28-1.23 3.28-1.23.66 1.66.24 2.88.12 3.18.77.84 1.23 1.9 1.23 3.22 0 4.61-2.8 5.63-5.48 5.92.43.37.82 1.1.82 2.22v3.3c0 .32.22.68.82.56C20.56 21.8 24 17.3 24 12c0-6.63-5.37-12-12-12z"/></svg>
+    View on GitHub
+  </a>
+</div>
+
+<!-- GESTURES -->
+<section class="section">
+  <p class="eyebrow">Gestures</p>
+  <h2>Two ways to record.</h2>
+
+  <div class="cards">
+    <div class="card">
+      <div class="keys">
+        <span class="key lit down">fn</span>
+        <span class="div">hold</span>
+        <span class="key">release</span>
+      </div>
+      <div class="card-title">Hold to record</div>
+      <p class="card-desc">Press and hold <strong>Fn</strong> for as long as you need. Release to instantly transcribe and inject text at your cursor.</p>
+    </div>
+
+    <div class="card">
+      <div class="keys">
+        <span class="key lit">fn</span>
+        <span class="div">×2 then</span>
+        <span class="key lit">fn</span>
+      </div>
+      <div class="card-title">Double-tap to latch</div>
+      <p class="card-desc">Two quick taps to start recording hands-free. Tap <strong>Fn</strong> once more when done to transcribe and inject.</p>
+    </div>
+  </div>
+</section>
+
+<!-- HOW IT WORKS -->
+<section class="section">
+  <p class="eyebrow">Under the hood</p>
+  <h2>How it works.</h2>
+
+  <div class="steps">
+    <div class="step">
+      <div class="step-n">01</div>
+      <div class="step-title">CGEventTap captures Fn</div>
+      <p class="step-desc">A kernel-level HID event tap intercepts the Fn key before the window server — no emoji keyboard, no interference.</p>
+    </div>
+    <div class="step">
+      <div class="step-n">02</div>
+      <div class="step-title">Voxtral transcribes</div>
+      <p class="step-desc">Audio from the built-in mic is sent to Mistral's Voxtral model for fast, accurate, language-aware transcription.</p>
+    </div>
+    <div class="step">
+      <div class="step-n">03</div>
+      <div class="step-title">Text injected anywhere</div>
+      <p class="step-desc">The result hits your clipboard and an AppleScript pastes it — works in every app, every text field, instantly.</p>
+    </div>
+  </div>
+</section>
+
+<!-- INSTALL -->
+<section class="section">
+  <p class="eyebrow">Get started</p>
+  <h2>Install in 60 seconds.</h2>
+
+  <div class="terminal">
+    <div class="term-bar">
+      <span class="dot dot-r"></span>
+      <span class="dot dot-y"></span>
+      <span class="dot dot-g"></span>
+    </div>
+    <div class="term-body">
+      <span class="ln cmt"># Clone and install</span>
+      <span class="ln cmd">git clone https://github.com/AZERDSQ131/wispr-flow-clone</span>
+      <span class="ln cmd">cd wispr-flow-clone</span>
+      <span class="ln cmd">python3 -m venv .venv &amp;&amp; source .venv/bin/activate</span>
+      <span class="ln cmd">pip install -r requirements.txt</span>
+      <span class="ln blank"></span>
+      <span class="ln cmt"># Add your Mistral API key</span>
+      <span class="ln cmd">cp .env.example .env</span>
+      <span class="ln cmd">nano .env &nbsp;&nbsp;<span style="color:var(--text-3)"># paste your key</span></span>
+      <span class="ln blank"></span>
+      <span class="ln cmt"># Run</span>
+      <span class="ln cmd">./run.sh</span>
+    </div>
+  </div>
+</section>
+
+<!-- FOOTER -->
+<footer>
+  <span class="foot-copy">MIT License &nbsp;·&nbsp; Built with Python, PyObjC &amp; Mistral</span>
+  <a class="foot-link" href="https://github.com/AZERDSQ131/wispr-flow-clone" target="_blank" rel="noopener">
+    github.com/AZERDSQ131/wispr-flow-clone
+  </a>
+</footer>
+
+<script>
+  // Waveform
+  const wf = document.getElementById('wf');
+  const hs = [.25,.4,.7,.55,.9,.65,.85,.45,.75,.95,.5,.35,.88,.7,1,.8,.6,.92,.48,.78,.96,.68,.38,.58,.85,.42,.76,.28];
+  hs.forEach((h, i) => {
+    const b = document.createElement('div');
+    b.className = 'bar';
+    const dur  = (0.7 + Math.random() * 0.9).toFixed(2) + 's';
+    const del  = ((i * 0.048) % 0.9).toFixed(2) + 's';
+    b.style.cssText = `height:${h * 56}px; --d:${dur}; --dl:${del};`;
+    wf.appendChild(b);
+  });
+</script>
+</body>
+</html>
