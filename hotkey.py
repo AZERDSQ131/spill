@@ -52,6 +52,7 @@ class HotkeyListener:
         self._press_time = 0.0
         self._tap_timer = None
         self._fn_down = False
+        self._recovering_from_timeout = False
         self._run_loop = None
         self._thread = None
         self._tap = None
@@ -69,6 +70,9 @@ class HotkeyListener:
     def _on_fn_press(self):
         cb = None
         with self._lock:
+            if self._recovering_from_timeout:
+                self._recovering_from_timeout = False
+                return
             if self._state == "IDLE":
                 self._press_time = time.time()
                 self._state = "PRESSING"
@@ -111,7 +115,12 @@ class HotkeyListener:
                 CGEventTapEnable(self._tap, True)
             if self._fn_down:
                 self._fn_down = False
-                self._on_fn_release()
+                with self._lock:
+                    simulate_release = self._state != "PRESSING"
+                    if not simulate_release:
+                        self._recovering_from_timeout = True
+                if simulate_release:
+                    self._on_fn_release()
             return event
 
         if event_type == kCGEventFlagsChanged:
