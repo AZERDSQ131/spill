@@ -27,7 +27,7 @@ Copier `.env.example` → `.env` et renseigner `MISTRAL_API_KEY`. Les paramètre
 Le flux de données principal est linéaire :
 
 ```
-HotkeyListener (pynput thread)
+HotkeyListener (CGEventTap thread)
     → cmd_queue (thread-safe)
     → DictationApp.run() [boucle principale, ~33 Hz]
         → AudioRecorder (sounddevice stream)
@@ -35,6 +35,12 @@ HotkeyListener (pynput thread)
         → TextInjector (clipboard + AppleScript Cmd+V)
         → Overlay (fenêtre HUD PyObjC)
 ```
+
+**`hotkey.py` / `HotkeyListener`** — Capture Fn/Globe via `CGEventTap` (Quartz). Machine d'états : IDLE → PRESSING → FIRST_TAP/LATCHED.
+
+Points critiques :
+- Quand macOS désactive l'event tap (`kCGEventTapDisabledByTimeout`, codes `0xFFFFFFFE`/`0xFFFFFFFF`), le handler transitionne PRESSING→IDLE et appelle `on_stop` immédiatement, sinon l'enregistrement reste bloqué.
+- Au démarrage, l'état initial de Fn est synchronisé via `CGEventSourceFlagsState` avant de traiter le premier event. Sans ça, si Fn est déjà enfoncé (ex. après un crash), le relâchement est ignoré.
 
 **`main.py` / `DictationApp`** — orchestre tout via une `queue.Queue`. Les événements du listener clavier (thread séparé) et la transcription (thread daemon) communiquent avec la boucle principale uniquement par cette queue. Les commandes sont : `start_recording`, `stop_recording`, `inject_text`, `error`, `hide`.
 
