@@ -34,11 +34,13 @@ def _is_media_playing():
     script = """
     set playingApps to {"Music", "Spotify", "Podcasts", "TV"}
     repeat with appName in playingApps
-        try
-            tell application appName
-                if player state is playing then return true
-            end tell
-        end try
+        if application appName is running then
+            try
+                tell application appName
+                    if player state is playing then return true
+                end tell
+            end try
+        end if
     end repeat
     return false
     """
