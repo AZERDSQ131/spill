@@ -29,6 +29,29 @@ def _media_playpause():
         Quartz.CGEventPost(Quartz.kCGHIDEventTap, ev.CGEvent())
 
 
+def _is_media_playing():
+    """Retourne True si un lecteur connu est en cours de lecture."""
+    script = """
+    set playingApps to {"Music", "Spotify", "Podcasts", "TV"}
+    repeat with appName in playingApps
+        try
+            tell application appName
+                if player state is playing then return true
+            end tell
+        end try
+    end repeat
+    return false
+    """
+    try:
+        result = subprocess.run(
+            ["osascript", "-e", script],
+            capture_output=True, text=True, timeout=1,
+        )
+        return "true" in result.stdout.lower()
+    except Exception:
+        return False
+
+
 def _fn_emoji_disable():
     """Désactive temporairement le clavier emoji sur la touche Fn/Globe.
     Retourne la valeur originale pour la restaurer à la fermeture."""
@@ -118,8 +141,9 @@ Créez un fichier .env à partir de .env.example :
         self._resume_media_if_needed()
 
     def _handle_start_recording(self):
-        _media_playpause()
-        self._media_paused = True
+        if _is_media_playing():
+            _media_playpause()
+            self._media_paused = True
         self.overlay.show_recording()
         self.recorder.start_recording()
 
