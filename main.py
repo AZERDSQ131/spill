@@ -4,9 +4,6 @@ import sys
 import threading
 import time
 
-import Quartz
-from AppKit import NSEvent
-
 from audio_recorder import AudioRecorder
 from config import MISTRAL_API_KEY
 from hotkey import HotkeyListener
@@ -15,43 +12,27 @@ from text_injector import TextInjector
 from transcriber import MistralTranscriber
 
 
-_NX_KEYTYPE_PLAY = 16
-
-
-def _media_playpause():
-    """Envoie la touche Play/Pause système (fonctionne avec tous les lecteurs)."""
-    for key_down in (True, False):
-        flags = 0xa00 if key_down else 0xb00
-        data1 = (_NX_KEYTYPE_PLAY << 16) | flags
-        ev = NSEvent.otherEventWithType_location_modifierFlags_timestamp_windowNumber_context_subtype_data1_data2_(
-            14, (0, 0), 0, 0, 0, None, 8, data1, -1,
-        )
-        Quartz.CGEventPost(Quartz.kCGHIDEventTap, ev.CGEvent())
-
-
-def _is_media_playing():
-    """Retourne True si un lecteur connu est en cours de lecture."""
-    script = """
-    set playingApps to {"Music", "Spotify", "Podcasts", "TV"}
-    repeat with appName in playingApps
-        if application appName is running then
-            try
-                tell application appName
-                    if player state is playing then return true
-                end tell
-            end try
-        end if
-    end repeat
-    return false
-    """
+def _get_volume():
+    """Retourne le volume de sortie actuel (0-100), ou None en cas d'erreur."""
     try:
         result = subprocess.run(
-            ["osascript", "-e", script],
+            ["osascript", "-e", "output volume of (get volume settings)"],
             capture_output=True, text=True, timeout=1,
         )
-        return "true" in result.stdout.lower()
+        return int(result.stdout.strip())
     except Exception:
-        return False
+        return None
+
+
+def _set_volume(vol):
+    """Définit le volume de sortie (0-100)."""
+    try:
+        subprocess.run(
+            ["osascript", "-e", f"set volume output volume {vol}"],
+            capture_output=True, timeout=1,
+        )
+    except Exception:
+        pass
 
 
 def _fn_emoji_disable():
@@ -115,7 +96,7 @@ Créez un fichier .env à partir de .env.example :
         self.transcriber = MistralTranscriber()
 
         self.cmd_queue = queue.Queue()
-        self._media_paused = False
+        self._saved_volume = None
 
         self.hotkey = HotkeyListener(
             on_start=self._on_hotkey_pressed,
@@ -132,26 +113,28 @@ Créez un fichier .env à partir de .env.example :
     def _on_hotkey_cancelled(self):
         self.cmd_queue.put(("cancel_recording", None))
 
-    def _resume_media_if_needed(self):
-        if self._media_paused:
-            self._media_paused = False
-            _media_playpause()
+    def _mute(self):
+        self._saved_volume = _get_volume()
+        _set_volume(0)
+
+    def _unmute(self):
+        if self._saved_volume is not None:
+            _set_volume(self._saved_volume)
+            self._saved_volume = None
 
     def _handle_cancel_recording(self):
         self.recorder.stop_recording()
         self.overlay.hide()
-        self._resume_media_if_needed()
+        self._unmute()
 
     def _handle_start_recording(self):
-        if _is_media_playing():
-            _media_playpause()
-            self._media_paused = True
+        self._mute()
         self.overlay.show_recording()
         self.recorder.start_recording()
 
     def _handle_stop_recording(self):
         audio_data = self.recorder.stop_recording()
-        self._resume_media_if_needed()
+        self._unmute()
         self.overlay.show_processing()
         if audio_data is None:
             self.overlay.hide()
